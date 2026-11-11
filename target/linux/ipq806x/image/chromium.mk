@@ -1,3 +1,10 @@
+DTS_DIR := $(DTS_DIR)/qcom
+
+define Device/dsa-migration
+  DEVICE_COMPAT_VERSION := 1.1
+  DEVICE_COMPAT_MESSAGE := Config cannot be migrated from swconfig to DSA
+endef
+
 define Build/cros-gpt
 	cp $@ $@.tmp 2>/dev/null || true
 	ptgen -o $@.tmp -g \
@@ -20,7 +27,9 @@ endef
 # (PARTNROFF=1) partition as their rootfs.
 define Build/cros-vboot
 	$(STAGING_DIR_HOST)/bin/cros-vbutil \
-		-k $@ -c "root=PARTUUID=%U/PARTNROFF=1" -o $@.new
+		-k $@ \
+		-c "root=PARTUUID=%U/PARTNROFF=1 rootwait fstools_partname_fallback_scan=1" \
+		-o $@.new
 	@mv $@.new $@
 endef
 
@@ -33,14 +42,19 @@ define Device/OnhubImage
 	IMAGES := factory.bin sysupgrade.bin
 	IMAGE/factory.bin := cros-gpt | append-kernel-part | append-rootfs
 	IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+	# Note: Chromium/Depthcharge-based bootloaders insert a reserved-memory
+	# ramoops node into the Device Tree automatically, so we can use
+	# kmod-ramoops.
 	DEVICE_PACKAGES := ath10k-firmware-qca988x-ct e2fsprogs kmod-fs-ext4 losetup \
 			   partx-utils mkf2fs kmod-fs-f2fs \
 			   ucode kmod-google-firmware kmod-tpm-i2c-infineon \
-			   kmod-sound-soc-ipq8064-storm kmod-usb-storage
+			   kmod-sound-soc-ipq8064-storm kmod-usb-storage \
+			   kmod-ramoops audio-support
 endef
 
 define Device/asus_onhub
 	$(call Device/OnhubImage)
+	$(Device/dsa-migration)
 	DEVICE_VENDOR := ASUS
 	DEVICE_MODEL := OnHub SRT-AC1900
 	DEVICE_DTS := $$(SOC)-asus-onhub
@@ -50,6 +64,7 @@ TARGET_DEVICES += asus_onhub
 
 define Device/tplink_onhub
 	$(call Device/OnhubImage)
+	$(Device/dsa-migration)
 	DEVICE_VENDOR := TP-Link
 	DEVICE_MODEL := OnHub AC1900 Cloud Router
 	DEVICE_DTS := $$(SOC)-tplink-onhub
